@@ -77,6 +77,26 @@ On the test data, the model performs the following steps:
 2. **Prediction**: Generate fraud probability labels for each transaction.
 3. **Save Results**: Export predictions in CSV format for further analysis or submission.
 
+## Running the program
+
+This model is written in [Python](https://www.python.org/), make sure you have Python installed.
+
+> This program was tested in Python 3.10 only.
+
+### Installation dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Run the main program
+
+```bash
+python main.py
+```
+
+Predictions are saved to ``submission.csv``.
+
 ## Results Analysis and Explanation
 
 ```
@@ -280,6 +300,26 @@ The model delivers outstanding results on non-fraud transactions but has room fo
 1. 預處理：應用與訓練數據相同的特徵處理方法。
 2. 預測：生成每筆交易的詐欺可能性標籤。
 3. 保存結果：以 CSV 格式輸出，供進一步分析或提交。
+
+## 運行程式
+
+本模型使用 [Python](https://www.python.org/) 編寫，請確保你已安裝 Python。
+
+> 本程式僅在 Python 3.10 中測試
+
+### 安裝依賴
+
+```bash
+pip install -r requirements.txt
+```
+
+### 執行主程式
+
+```bash
+python main.py
+```
+
+預測結果將保存到 `submission.csv`
 
 ## 結果分析與解釋
 
