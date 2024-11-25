@@ -11,7 +11,7 @@ from collections import defaultdict
 class FraudDetectionModel:
     def __init__(self):
         self.label_encoders = {}
-        self.label_maps = defaultdict(dict)  # 儲存每個特徵的類別映射
+        self.label_maps = defaultdict(dict)  # Store category mappings for each feature
         self.scaler = StandardScaler()
         self.model = xgb.XGBClassifier(
             learning_rate=0.1,
@@ -26,44 +26,44 @@ class FraudDetectionModel:
         )
 
     def safe_label_encode(self, series, feature_name, is_training=True):
-        """安全的標籤編碼，處理未見過的類別"""
+        """Safely encode labels, handling unseen categories"""
         if is_training:
-            # 訓練階段：創建新的編碼器和映射
+            # Training phase: create a new encoder and mapping
             unique_values = series.unique()
             self.label_maps[feature_name] = {
                 val: i for i, val in enumerate(unique_values)
             }
             return series.map(self.label_maps[feature_name])
         else:
-            # 測試階段：使用現有映射，將未見過的類別映射到特殊值
+            # Testing phase: use existing mapping and map unseen categories to a special value
             mapping = self.label_maps[feature_name]
             max_val = max(mapping.values())
             return series.map(lambda x: mapping.get(x, max_val + 1))
 
     def convert_time_to_minutes(self, time_str):
-        """將時間字符串轉換為分鐘數"""
+        """Convert a time string to minutes past midnight"""
         try:
             hours, minutes = map(int, time_str.split(":"))
             return hours * 60 + minutes
         except:
-            print(f"無法解析時間格式: {time_str}")
-            return 0  # 返回默認值而不是 None
+            print(f"Unable to parse time format: {time_str}")
+            return 0  # Return default value instead of None
 
     def preprocess_data(self, df, is_training=True):
-        # 創建數據的副本
+        # Create a copy of the data
         data = df.copy()
 
-        # 處理類別型特徵
+        # Handle categorical features
         categorical_features = ["att3", "att6", "att7", "att8", "att9"]
 
         for feature in categorical_features:
             data[feature] = self.safe_label_encode(data[feature], feature, is_training)
 
-        # 處理時間特徵
+        # Process time features
         data["minutes_from_midnight"] = data["att1"].apply(self.convert_time_to_minutes)
         data["hour"] = data["minutes_from_midnight"] // 60
 
-        # 創建時間段特徵
+        # Create time period feature
         data["time_period"] = pd.cut(
             data["hour"],
             bins=[-1, 5, 11, 16, 21, 24],
@@ -73,7 +73,7 @@ class FraudDetectionModel:
             data["time_period"], "time_period", is_training
         )
 
-        # 創建週期性時間特徵
+        # Create cyclic time features
         minutes_in_day = 24 * 60
         data["time_sin"] = np.sin(
             2 * np.pi * data["minutes_from_midnight"] / minutes_in_day
@@ -82,41 +82,41 @@ class FraudDetectionModel:
             2 * np.pi * data["minutes_from_midnight"] / minutes_in_day
         )
 
-        # 計算地理距離
+        # Calculate geographic distance
         data["distance"] = np.sqrt(
             (data["att12"] - data["att15"]) ** 2 + (data["att13"] - data["att16"]) ** 2
         )
 
-        # 特徵組合
+        # Feature engineering
         data["amount_per_distance"] = data["att4"] / (
             data["distance"] + 1
-        )  # 避免除以零
+        )  # Avoid division by zero
         data["amount_time_factor"] = data["att4"] * np.abs(
             data["time_sin"]
-        )  # 交易金額和時間的關係
+        )  # Relationship between transaction amount and time
 
-        # 選擇要使用的特徵
+        # Select features to use
         features = [
-            "att4",  # 交易金額
-            "att5",  # 持卡人年齡
-            "hour",  # 小時
-            "time_period",  # 時間段
-            "time_sin",  # 週期性時間特徵（正弦）
-            "time_cos",  # 週期性時間特徵（餘弦）
-            "distance",  # 地理距離
-            "att10",  # 城市人口
-            "att3",  # 交易類別
-            "att6",  # 性別
-            "att7",  # 職業
-            "att8",  # 城市
-            "att9",  # 州
-            "amount_per_distance",  # 單位距離的交易金額
-            "amount_time_factor",  # 交易金額時間因子
+            "att4",  # Transaction amount
+            "att5",  # Cardholder age
+            "hour",  # Hour
+            "time_period",  # Time period
+            "time_sin",  # Cyclic time feature (sine)
+            "time_cos",  # Cyclic time feature (cosine)
+            "distance",  # Geographic distance
+            "att10",  # City population
+            "att3",  # Transaction category
+            "att6",  # Gender
+            "att7",  # Occupation
+            "att8",  # City
+            "att9",  # State
+            "amount_per_distance",  # Transaction amount per unit distance
+            "amount_time_factor",  # Transaction amount-time factor
         ]
 
         X = data[features]
 
-        # 標準化數值特徵
+        # Standardize numerical features
         numerical_features = [
             "att4",
             "att5",
@@ -134,70 +134,72 @@ class FraudDetectionModel:
         return X
 
     def train(self, train_data):
-        print("開始訓練模型...")
+        print("Training model...")
 
-        # 預處理訓練數據
+        # Preprocess training data
         X = self.preprocess_data(train_data, is_training=True)
         y = train_data["fraud"]
 
-        # 分割訓練集和驗證集
+        # Split into training and validation sets
         X_train, X_val, y_train, y_val = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
 
-        # 計算類別權重
+        # Compute class weights
         total = len(y_train)
         fraud_ratio = sum(y_train) / total
         scale_pos_weight = (1 - fraud_ratio) / fraud_ratio
         self.model.set_params(scale_pos_weight=scale_pos_weight)
 
-        # 訓練模型
+        # Train model
         eval_set = [(X_val, y_val)]
         self.model.fit(X_train, y_train, eval_set=eval_set, verbose=True)
 
-        # 進行交叉驗證
+        # Perform cross-validation
         cv_scores = cross_val_score(self.model, X, y, cv=5)
-        print(f"\n交叉驗證分數: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+        print(
+            f"\nCross-validation scores: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})"
+        )
 
-        # 在驗證集上評估模型
+        # Evaluate model on validation set
         y_pred = self.model.predict(X_val)
-        print("\n分類報告:")
+        print("\nClassification Report:")
         print(classification_report(y_val, y_pred))
 
-        print("\n混淆矩陣:")
+        print("\nConfusion Matrix:")
         print(confusion_matrix(y_val, y_pred))
 
-        # 輸出特徵重要性
+        # Output feature importance
         feature_importance = pd.DataFrame(
             {"feature": X.columns, "importance": self.model.feature_importances_}
         )
-        print("\n特徵重要性:")
+        print("\nFeature Importance:")
         print(feature_importance.sort_values("importance", ascending=False))
 
     def predict(self, test_data):
-        # 預處理測試數據
+        # Preprocess test data
         X_test = self.preprocess_data(test_data, is_training=False)
 
-        # 進行預測
+        # Make predictions
         predictions = self.model.predict(X_test)
 
-        # 創建提交文件
+        # Create submission file
         submission = pd.DataFrame({"Id": test_data["Id"], "fraud": predictions})
 
         return submission
 
 
-# 使用示例
+# Example Usage
 if __name__ == "__main__":
-    # 讀取數據
+    # Load data
     train_data = pd.read_csv("data/train_data.csv")
     test_data = pd.read_csv("data/test_data.csv")
 
-    # 創建和訓練模型
+    # Create and train model
     model = FraudDetectionModel()
     model.train(train_data)
 
-    # 進行預測並保存結果
+    # Make predictions and save results
     predictions = model.predict(test_data)
     predictions.to_csv("submission.csv", index=False)
-    print("\n預測結果已保存到 'submission.csv'")
+    print("\nPredictions saved to 'submission.csv'")
